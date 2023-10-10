@@ -2,7 +2,8 @@
 
 import InstrumentDriver
 import numpy as np
-
+import logging
+log = logging.getLogger('LabberDriver')
 
 class Error(Exception):
     pass
@@ -65,7 +66,7 @@ class Driver(InstrumentDriver.InstrumentWorker):
             value = valueI
         return value
 
-    def getIQAmplitudes(self,string):
+    def getIQAmplitudes(self, string):
         """Calculate complex signal from data and reference"""
         # get parameters
         dFreq = self.getValue('Modulation frequency')

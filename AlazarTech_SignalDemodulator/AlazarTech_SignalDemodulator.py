@@ -54,12 +54,15 @@ class Driver(InstrumentDriver.InstrumentWorker):
                           'Channel B - SNR',
                           'Channel A - Average demodulated value',
                           'Channel B - Average demodulated value',
+                          'Channel A,B - IQ Average demodulated value',
                           'Channel A - Average piecewise demodulated values',
                           'Channel B - Average piecewise demodulated values',
+                          'Channel A,B - IQ Average piecewise demodulated values',
                           'Channel A - Average buffer',
                           'Channel B - Average buffer',
                           'Channel A - Average buffer demodulated values',
-                          'Channel B - Average buffer demodulated values'):
+                          'Channel B - Average buffer demodulated values',
+                          'Channel A,B - IQ Average buffer demodulated values',):
 
             # special case for hardware looping
             if self.isHardwareLoop(options):
@@ -104,7 +107,7 @@ class Driver(InstrumentDriver.InstrumentWorker):
             self._nReadout = self.getValue('Number of readout pulse in one waveform')
             self._nRecords = n_seq * nRecords
             # disable trig timeout (set to 1 minute)
-            self.dig.AlazarSetTriggerTimeOut(self.dComCfg['Timeout'] + 60.0)
+            self.dig.AlazarSetTriggerTimeOut(self.dComCfg['Timeout'] + 5*60.0)
             # need to re-configure the card since record size was not
             # known at config
             self.dig.readRecordsDMA(self._mode, self._nSamples,
@@ -139,7 +142,7 @@ class Driver(InstrumentDriver.InstrumentWorker):
                     bConfig=False, bArm=False, bMeasure=True,
                     funcStop=self.isStopped,
                     funcProgress=self._callbackProgress,
-                    firstTimeout=self.dComCfg['Timeout'] + 60.,
+                    firstTimeout=self.dComCfg['Timeout'] + 5*60.,
                     maxBuffers=self._nMaxBuffers,
                     maxBufferSize=self._maxBufferSize)
 
@@ -162,16 +165,10 @@ class Driver(InstrumentDriver.InstrumentWorker):
             # 10 MHz ref, for 9373 - decimation is 1
             # for now don't allow DES mode; talk to Simon about best
             # implementation
-            lFreq = [1E3, 2E3, 5E3, 10E3, 20E3, 50E3, 100E3, 200E3,
-                     500E3, 1E6, 2E6, 5E6, 10E6, 20E6, 50E6, 100E6,
-                     200E6, 500E6, 1E9, 1.2E9, 1.5E9, 2E9, 2.4E9, 3E9,
-                     3.6E9, 4E9]
-            SampleRateId = int(lFreq[sampleRateIndex])
-            Decimation = 0
-
-            ### MODIFIED
-            SampleRateId = int(1E9)
-            Decimation = int(1E9 / lFreq[sampleRateIndex])
+            lFreq = [1E3, 2E3, 5E3, 10E3, 20E3, 50E3, 100E3, 200E3, 500E3,
+                     1E6, 2E6, 5E6, 10E6, 20E6, 50E6, 100E6, 200E6, 500E6, 1E9,
+                     1.2E9, 1.5E9, 2E9, 2.4E9, 3E9, 3.6E9, 4E9]
+            SampleRateId = int(lFreq[self.getValueIndex('Sample rate')])
             Decimation = 0
 
         elif self.getValue('Clock source') == '10 MHz Reference' and \
@@ -282,7 +279,9 @@ class Driver(InstrumentDriver.InstrumentWorker):
             self._bRef = True
         else:
             self._bRef = False
-            
+
+        self.perform_IQdemodulation = self.getValue("Use IQ demodulation")
+
         if not self.isHardwareLoop(options):
             # configure DMA read
             self.dig.readRecordsDMA(self._mode, self._nSamples,
@@ -386,13 +385,15 @@ class Driver(InstrumentDriver.InstrumentWorker):
                 flattened = self.data[name[:9]].ravel()
                 return quant.getTraceDict(flattened, dt=self._dt)
             elif name in ('Channel A - Demodulated values',
-                          'Channel B - Demodulated values'):
+                          'Channel B - Demodulated values',
+                          'Channel A,B - IQ Demodulated values'):
                 if name not in self.data:
                     self.getDemodulatedValuesFromIndividual()  
                 return quant.getTraceDict(self.data[name], dt=1)
                
             elif name in ('Channel A - Average demodulated value',
-                          'Channel B - Average demodulated value'):
+                          'Channel B - Average demodulated value',
+                          'Channel A,B - IQ Average demodulated value'):
                 if name not in self.data:
                     t0 = time.clock()
                     self.getDemodulatedValuesFromIndividual()
@@ -407,7 +408,8 @@ class Driver(InstrumentDriver.InstrumentWorker):
                     self.getAverageRecordFromIndiviual()
                 return quant.getTraceDict(self.data[name], dt=self._dt)
             elif name in ('Channel A - Average piecewise demodulated values',
-                          'Channel B - Average piecewise demodulated values'):
+                          'Channel B - Average piecewise demodulated values',
+                          'Channel A,B - IQ Average piecewise demodulated values'):
                 if name not in self.data:
                     if ('%s - Average record' % name[:9]) not in self.data:
                         self.getAverageRecordFromIndiviual() 
@@ -479,11 +481,13 @@ class Driver(InstrumentDriver.InstrumentWorker):
                         'Channel B - Average record'):
                 return quant.getTraceDict(self.data[name], dt=self._dt)
             elif name in ('Channel A - Average demodulated value',
-                          'Channel B - Average demodulated value'):
+                          'Channel B - Average demodulated value',
+                          'Channel A,B - IQ Average demodulated value'):
                 self.getDemodulatedValueFromAverage()
                 return self.data[name]
             elif name in ('Channel A - Average piecewise demodulated values',
-                          'Channel B - Average piecewise demodulated values'):
+                          'Channel B - Average piecewise demodulated values',
+                          'Channel A,B - IQ Average piecewise demodulated values'):
                 if name not in self.data:
                     self.getPiecewiseDemodulatedValuesFromAverage()
                 dt = self.getValue('Demodulation length')
@@ -522,21 +526,25 @@ class Driver(InstrumentDriver.InstrumentWorker):
                 return quant.getTraceDict(self.data[name].flatten(),
                                           dt=self._dt)
             elif name in ('Channel A - Average buffer demodulated values',
-                          'Channel B - Average buffer demodulated values'):
+                          'Channel B - Average buffer demodulated values',
+                          'Channel A,B - IQ Average buffer demodulated values'):
                 if name not in self.data:
                     self.getDemodulatedValuesFromBuffer()
                 dt = self.getValue('Sequence time step')
                 return quant.getTraceDict(self.data[name], dt=dt)            
             elif self.isHardwareLoop(options) and name in \
                     ('Channel A - Average demodulated value',
-                     'Channel B - Average demodulated value'):
+                     'Channel B - Average demodulated value',
+                     'Channel A,B - IQ Average demodulated value'):
                 (seq_no, n_seq) = self.getHardwareLoopIndex(options)
                 if seq_no == 0:
                     self.getDemodulatedValuesFromBuffer()
-                if name.startswith('Channel A'):
+                if name.startswith('Channel A -'):
                     return self.data['Channel A - Average buffer demodulated values'][seq_no]
-                else:
+                elif name.startswith('Channel B -'):
                     return self.data['Channel B - Average buffer demodulated values'][seq_no]
+                elif name.startswith('Channel A,B -'):
+                    return self.data['Channel A,B - IQ Average buffer demodulated values'][seq_no]
             elif self.isHardwareLoop(options) and \
                     name in ('Channel A - Average record',
                              'Channel B - Average record'):
@@ -643,6 +651,11 @@ class Driver(InstrumentDriver.InstrumentWorker):
                 meanDemodVal = np.mean(vDemodVals)
                 self.data['%s - Average demodulated value' % ch] = meanDemodVal
                 self.data['%s - SNR' % ch] = np.abs(meanDemodVal) / np.std(vDemodVals)
+        if self.perform_IQdemodulation:
+            self.data['Channel A,B - IQ Demodulated value'] = \
+                self.data['Channel A - Demodulated value'] - 1.j * self.data['Channel B - Demodulated value']
+            self.data['Channel A,B - IQ Average demodulated value'] = \
+                self.data['Channel A - Average demodulated value'] - 1.j * self.data['Channel B - Average demodulated value']
 
     def getDemodulatedValueFromAverage(self):
         """Calculate complex signal vector from data and reference."""
@@ -667,6 +680,9 @@ class Driver(InstrumentDriver.InstrumentWorker):
                 vDemodVal = np.dot(vCh, vExp)
                 vDemodVal /= .5 * np.float32(length -1)
                 self.data['%s - Average demodulated value' % ch] = vDemodVal
+        if self.perform_IQdemodulation:
+            self.data['Channel A,B - IQ Average demodulated value'] = \
+                self.data['Channel A - Average demodulated value'] - 1.j * self.data['Channel B - Average demodulated value']
 
     def getPiecewiseDemodulatedValuesFromAverage(self):
         # get parameters
@@ -701,7 +717,13 @@ class Driver(InstrumentDriver.InstrumentWorker):
             self.data['Channel B - Average piecewise '
                       'demodulated values'] = data['Channel B']
         self.data['Channel A - Average piecewise '
-                  'demodulated values'] = data['Channel A'] 
+                  'demodulated values'] = data['Channel A']
+
+        if self.perform_IQdemodulation:
+            self.data['Channel A,B - IQ Average piecewise '
+                  'demodulated values'] = self.data['Channel A - Average piecewise '
+                  'demodulated values'] - 1.j * self.data['Channel B - Average piecewise '
+                  'demodulated values']
 
     def getDemodulatedValuesFromBuffer(self):
         # get parameters
@@ -725,7 +747,9 @@ class Driver(InstrumentDriver.InstrumentWorker):
                 vDemodVal = np.dot(vCh, vExp)
                 vDemodVal /= .5 * np.float32(length -1)
                 self.data['%s - Average buffer demodulated values' % ch] = vDemodVal
-
+        if self.perform_IQdemodulation:
+            self.data['Channel A,B - IQ Average buffer demodulated values'] = \
+                self.data['Channel A - Average buffer demodulated values'] - 1.j * self.data['Channel B - Average buffer demodulated values']
 
 if __name__ == '__main__':
     pass

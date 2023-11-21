@@ -201,7 +201,6 @@ class AlazarTechDigitizer():
         demodulates/averages to a single trace.
         """
         data = {}
-        
         # use global timeout if not given
         timeout = self.timeout if timeout is None else timeout
         # first timeout can be different in case of slow initial arming
@@ -323,7 +322,7 @@ class AlazarTechDigitizer():
         # arm and start capture, if wanted
         if bArm:
             # configure the board to make an NPT AutoDMA acquisition
-            self.AlazarBeforeAsyncRead(3, 0,
+            self.AlazarBeforeAsyncRead(2, 0,
                     samplesPerRecord,
                     nRecordsPerBuffer,
                     nRecord,
@@ -358,7 +357,7 @@ class AlazarTechDigitizer():
         rangeB = np.float32(self.dRange[2] / self.codeRange)
 
         buffersCompleted = 0
-        timeout_ms = int(1000. * firstTimeout)
+        timeout_ms = int(1000. * firstTimeout + 5.0*60)
         t0 = time.clock()
         try:
             while buffersCompleted < nBuffersPerAcquisition:
@@ -407,6 +406,7 @@ class AlazarTechDigitizer():
                     1, 0).reshape(self.nChannels,
                                   nRecord,
                                   samplesPerRecord)
+
             if samplesPerRecord != nSamples:
                 recordsView = recordsView[:,:,:nSamples]
             recordsFloat = recordsView.astype(dtype=np.float32, copy=True)
